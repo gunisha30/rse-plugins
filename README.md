@@ -4,6 +4,23 @@
 
 Custom AI agents and skills for Research Software Engineering (RSE) and Scientific Computing tasks, designed for use with [Claude Code](https://www.anthropic.com/claude/code) and compatible AI coding assistants.
 
+## GitHub Codespaces
+
+Click the badge above to open a Codespace with all RSE plugins pre-installed. Claude Code and GitHub Copilot CLI are ready to use immediately.
+
+### Using a LiteLLM Gateway (Optional)
+
+To route Copilot through a custom LiteLLM-compatible gateway, you need to set two secrets. Because GitHub Codespaces secrets can only be scoped to repos you own, follow these steps:
+
+1. **Fork this repo** — Click **Fork** on [github.com/uw-ssec/rse-plugins](https://github.com/uw-ssec/rse-plugins).
+2. **Add secrets** — Go to your GitHub account settings: **Settings → Codespaces → Secrets**, then add:
+   - `LITELLM_BASE_URL` — your gateway base URL
+   - `LITELLM_API_KEY` — your gateway API key
+   - When adding each secret, under **Repository access**, select your fork.
+3. **Open a Codespace from your fork** — Go to your fork on GitHub and click **Code → Codespaces → Create codespace on main**.
+
+The Codespace will automatically detect the secrets and configure Copilot to route through your gateway.
+
 ## Purpose
 
 This repository provides specialized agents and skills that understand the unique challenges of scientific software development, including:
