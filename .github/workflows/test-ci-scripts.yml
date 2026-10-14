@@ -1,15 +1,22 @@
 name: Test CI scripts
 
+# The step tests run the run: blocks of the three workflows listed after the scripts.
 on:
   pull_request:
     paths:
       - '.github/scripts/**'
       - '.github/workflows/test-ci-scripts.yml'
+      - '.github/workflows/evaluate-all-skills.yml'
+      - '.github/workflows/evaluate-per-model.yml'
+      - '.github/workflows/generate-testcases.yml'
   push:
     branches: [main]
     paths:
       - '.github/scripts/**'
       - '.github/workflows/test-ci-scripts.yml'
+      - '.github/workflows/evaluate-all-skills.yml'
+      - '.github/workflows/evaluate-per-model.yml'
+      - '.github/workflows/generate-testcases.yml'
 
 permissions: {}
 
