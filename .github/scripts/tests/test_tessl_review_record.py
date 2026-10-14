@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 PAYLOAD = {
     "review": {"reviewScore": 85},
     "validation": {
@@ -61,3 +63,11 @@ def test_string_evaluation_is_kept_verbatim(record):
     payload = {"review": {"reviewScore": 50}, "judges": {"content": {"evaluation": "Needs work."}}}
     rec = record.build_record("plugins/p/skills/s", json.dumps(payload), 0)
     assert rec["judge_block"] == "[content]\nNeeds work."
+
+
+@pytest.mark.parametrize("judges", [{"content": {"evaluation": {"scores": {"clarity": 2}}}}, ["not", "a", "mapping"]])
+def test_unexpected_json_shape_becomes_error_record(record, judges):
+    """A change in Tessl's --json schema must surface as an error record, not crash the step."""
+    rec = record.build_record("plugins/p/skills/s", json.dumps({"review": {"reviewScore": 50}, "judges": judges}), 0)
+    assert rec["status"] == "error"
+    assert "unexpected tessl --json shape" in rec["error"]

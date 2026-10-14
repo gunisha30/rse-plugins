@@ -73,21 +73,25 @@ def build_record(skill: str, raw: str, exit_code: int) -> dict:
     if payload is None:
         message = raw.strip()[:500] or f"tessl exited with code {exit_code} and printed nothing"
         return {"skill": skill, "status": "error", "error": message}
-    validation = payload.get("validation") or {}
-    judges = payload.get("judges") or {}
-    score = (payload.get("review") or {}).get("reviewScore")
-    return {
-        "skill": skill,
-        "status": "reviewed",
-        "validation": "PASSED" if validation.get("overallPassed") else "FAILED",
-        "errors": str(validation.get("errorCount", "")),
-        "warnings": str(validation.get("warningCount", "")),
-        "review_score": "" if score is None else str(score),
-        "description": judge_percent(judges.get("description")),
-        "content": judge_percent(judges.get("content")),
-        "validation_block": format_validation(validation),
-        "judge_block": format_judges(judges),
-    }
+    try:
+        validation = payload.get("validation") or {}
+        judges = payload.get("judges") or {}
+        score = (payload.get("review") or {}).get("reviewScore")
+        return {
+            "skill": skill,
+            "status": "reviewed",
+            "validation": "PASSED" if validation.get("overallPassed") else "FAILED",
+            "errors": str(validation.get("errorCount", "")),
+            "warnings": str(validation.get("warningCount", "")),
+            "review_score": "" if score is None else str(score),
+            "description": judge_percent(judges.get("description")),
+            "content": judge_percent(judges.get("content")),
+            "validation_block": format_validation(validation),
+            "judge_block": format_judges(judges),
+        }
+    except (AttributeError, TypeError, ValueError) as exc:
+        # Tessl changed its --json schema: report that instead of failing the step with no record.
+        return {"skill": skill, "status": "error", "error": f"unexpected tessl --json shape: {exc!r}"}
 
 
 def main() -> None:
