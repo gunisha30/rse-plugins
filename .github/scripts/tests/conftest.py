@@ -16,3 +16,8 @@ def _load(name: str):
 @pytest.fixture(scope="session")
 def gen():
     return _load("generate-testcases")
+
+
+@pytest.fixture(scope="session")
+def record():
+    return _load("tessl-review-record")
