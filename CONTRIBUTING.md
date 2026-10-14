@@ -128,6 +128,22 @@ To test your agent:
 4. Check that the agent stays within its defined scope
 5. Ensure the agent promotes best practices for scientific software
 
+## 📊 Evaluating Skills
+
+Two manually triggered workflows measure skills (**Actions → workflow → Run workflow**). Neither runs on pull requests.
+
+- **Evaluate All Skills** runs each skill's testcases with and without the skill on every model the LiteLLM proxy serves, and writes a baseline-versus-skill comparison to the run summary. Testcases live in the private `uw-ssec/rse-plugins-testcases` repository. A full run takes many hours, so narrow it with the `skills` and `models` inputs (comma-separated) and set `sleep-seconds` to `0` for a quick check. When the `TESSL_TOKEN` secret is set, the run also adds an advisory Tessl review of each selected skill.
+- **Generate Testcases for New Skills** drafts five or six testcases for each skill a pull request adds. Run it with the PR number after reviewing the PR. With `dry-run` on (the default), the drafts are uploaded as a run artifact; turn it off to open a pull request in the testcases repository for review.
+
+| Secret or variable | Used by | Purpose |
+|---|---|---|
+| `LITELLM_API_KEY`, `LITELLM_PROXY_URL` | Both | Model access through the LiteLLM proxy |
+| `TEST_REPO_TOKEN` | Both | Fine-grained token for `rse-plugins-testcases`: Contents read for evaluation; Contents and Pull requests read/write for generation |
+| `TESSL_TOKEN` (optional secret) | Evaluate All Skills | Turns on the Tessl review |
+| `TESSL_WORKSPACE` (optional variable) | Evaluate All Skills | Tessl workspace to use when the token can see more than one |
+
+Run the unit tests for these workflows' scripts with `pixi exec --spec python=3.12 --spec pytest --spec pyyaml pytest .github/scripts/tests -q`.
+
 ## 📋 Code of Conduct
 
 This project adheres to professional standards of conduct. Please be respectful and constructive in all interactions.
