@@ -6,6 +6,7 @@ Usage:
         --reviews-dir /tmp/all-reviews \\
         --evals-dir   /tmp/all-evals \\
         --threshold   80 \\
+        --tessl-enabled true \\
         --output      /path/to/output
 
 The script reads all *.json files from the two input directories, merges them
@@ -15,8 +16,14 @@ by skill name, and writes a Markdown summary.
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
+
+# GitHub drops a step summary larger than 1 MiB; keep headroom below it.
+MAX_SUMMARY_BYTES = 1_000_000
+# Per-block character caps tried in order until the summary fits (None = no cap).
+DETAIL_LIMITS = (None, 2_000, 0)
 
 
 def load_json_files(directory: str) -> list[dict]:
@@ -132,15 +139,31 @@ def format_skill_label(skill: str) -> str:
     return skill
 
 
-def render_skill(skill: str, review: dict, skill_evals: list[dict], threshold: int) -> list[str]:
-    """Return all Markdown lines for a single skill section."""
+def fenced(block: str, limit: int | None) -> list[str]:
+    """Return block as a code fence longer than any backtick run inside it, capped at limit chars."""
+    if limit is not None and len(block) > limit:
+        block = block[:limit] + "\n… (truncated)"
+    longest = max((len(run) for run in re.findall(r"`+", block)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [fence, block, fence]
+
+
+def render_review(review: dict, threshold: int, detail_limit: int | None) -> list[str]:
+    """Return the Tessl validation and judge sections for one skill."""
+    if not review:
+        return ["## ❌ Tessl Review Missing", "", "No review result was uploaded for this skill.", ""]
+    if review.get("status") == "error":
+        return [
+            "## ❌ Tessl Review Error",
+            "",
+            "<details><summary>Error</summary>",
+            "",
+            *fenced(review.get("error", ""), detail_limit),
+            "</details>",
+            "",
+        ]
+
     lines: list[str] = []
-
-    # Section header
-    skill_label = format_skill_label(skill)
-    lines += ["---", "", f"# {skill_label}", ""]
-
-    # Validation checks
     val = review.get("validation", "")
     errors = review.get("errors", "")
     warnings = review.get("warnings", "")
@@ -163,9 +186,7 @@ def render_skill(skill: str, review: dict, skill_evals: list[dict], threshold: i
         "",
         "<details><summary>Validation Checks Detail</summary>",
         "",
-        "```",
-        val_block,
-        "```",
+        *fenced(val_block, detail_limit),
         "</details>",
         "",
     ]
@@ -183,12 +204,30 @@ def render_skill(skill: str, review: dict, skill_evals: list[dict], threshold: i
         "",
         "<details><summary>Judge Evaluation Detail</summary>",
         "",
-        "```",
-        judge_block,
-        "```",
+        *fenced(judge_block, detail_limit),
         "</details>",
         "",
     ]
+    return lines
+
+
+def render_skill(
+    skill: str,
+    review: dict,
+    skill_evals: list[dict],
+    threshold: int,
+    tessl_enabled: bool = True,
+    detail_limit: int | None = None,
+) -> list[str]:
+    """Return all Markdown lines for a single skill section."""
+    lines: list[str] = []
+
+    # Section header
+    skill_label = format_skill_label(skill)
+    lines += ["---", "", f"# {skill_label}", ""]
+
+    if tessl_enabled:
+        lines += render_review(review, threshold, detail_limit)
 
     # Eval results summary table
     lines += ["## 📊 Eval Results", ""]
@@ -272,26 +311,14 @@ def render_skill(skill: str, review: dict, skill_evals: list[dict], threshold: i
     return lines
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--reviews-dir", default="/tmp/all-reviews")
-    parser.add_argument("--evals-dir", default="/tmp/all-evals")
-    parser.add_argument("--threshold", type=int, default=80)
-    parser.add_argument(
-        "--output",
-        default=os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout"),
-        help="File to append Markdown to (default: $GITHUB_STEP_SUMMARY or stdout)",
-    )
-    args = parser.parse_args()
-
-    reviews = load_json_files(args.reviews_dir)
-    evals = load_json_files(args.evals_dir)
-
-    if not reviews and not evals:
-        with open(args.output, "a") as fh:
-            fh.write("No evaluation results found.\n")
-        return
-
+def render_summary(
+    reviews: list[dict],
+    evals: list[dict],
+    threshold: int,
+    tessl_enabled: bool,
+    detail_limit: int | None,
+) -> str:
+    """Return the whole Markdown summary with detail blocks capped at detail_limit chars."""
     # Index reviews by skill name; index evals as list per skill
     review_by_skill: dict[str, dict] = {}
     for r in reviews:
@@ -308,16 +335,49 @@ def main() -> None:
     all_skills = sorted(set(review_by_skill) | set(evals_by_skill))
 
     lines: list[str] = ["# Evaluation Summary", ""]
+    if not tessl_enabled:
+        lines += ["> Tessl review skipped: no `TESSL_TOKEN` secret is configured.", ""]
     for skill in all_skills:
         lines += render_skill(
             skill,
             review_by_skill.get(skill, {}),
             evals_by_skill.get(skill, []),
-            args.threshold,
+            threshold,
+            tessl_enabled,
+            detail_limit,
         )
+    return "\n".join(lines) + "\n"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reviews-dir", default="/tmp/all-reviews")
+    parser.add_argument("--evals-dir", default="/tmp/all-evals")
+    parser.add_argument("--threshold", type=int, default=80)
+    parser.add_argument("--tessl-enabled", choices=["true", "false"], default="true")
+    parser.add_argument(
+        "--output",
+        default=os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout"),
+        help="File to append Markdown to (default: $GITHUB_STEP_SUMMARY or stdout)",
+    )
+    args = parser.parse_args()
+
+    reviews = load_json_files(args.reviews_dir)
+    evals = load_json_files(args.evals_dir)
+
+    if not reviews and not evals:
+        with open(args.output, "a") as fh:
+            fh.write("No evaluation results found.\n")
+        return
+
+    tessl_enabled = args.tessl_enabled == "true"
+    for limit in DETAIL_LIMITS:
+        text = render_summary(reviews, evals, args.threshold, tessl_enabled, limit)
+        if len(text.encode("utf-8")) <= MAX_SUMMARY_BYTES:
+            break
 
     with open(args.output, "a") as fh:
-        fh.write("\n".join(lines) + "\n")
+        fh.write(text)
 
 
 if __name__ == "__main__":
