@@ -1,6 +1,6 @@
 ---
 name: pixi-package-manager
-description: "Manage scientific Python dependencies and environments with the pixi package manager: create environments, add conda-forge and PyPI packages, define and run tasks, and generate reproducible multi-platform lockfiles. Use when the user mentions pixi, pixi.toml, pixi.lock, pixi init/add/run, conda-forge, or needs reproducible scientific Python environments combining conda and PyPI packages."
+description: "Use when the user mentions pixi, pixi.toml, pixi.lock, pixi add/run/task, conda-forge environments, or needs reproducible scientific Python environments combining conda and PyPI packages. Manage scientific Python dependencies with pixi: create environments, add conda-forge and PyPI packages, define and run tasks, generate multi-platform lockfiles, and migrate from conda/requirements.txt. Trigger phrases: 'pixi', 'pixi.toml', 'pixi.lock', 'pixi add', 'pixi run', 'scientific computing environment', 'conda-forge', 'dependency lockfile'."
 metadata:
   pixi-version: "0.72.1"
   last-verified: "2026-07-08"
@@ -213,16 +213,4 @@ Quick fixes for the most common failures (full guide in
 See the reference for editable local installs, slow environment creation, and
 PyPI build failures.
 
-## Best Practices
-
-See [references/best-practices.md](references/best-practices.md) for checklists
-covering project setup, dependency management, reproducibility, performance, and
-development workflow — including SHA-pinning GitHub Actions in CI (see
-[assets/github-actions-pixi.yml](assets/github-actions-pixi.yml)).
-
-## Resources
-
-- **Documentation**: https://pixi.sh/latest/ · **GitHub**: https://github.com/prefix-dev/pixi
-- **Configuration reference**: https://pixi.sh/latest/reference/project_configuration/
-- **Building packages (`pixi build`)**: https://pixi.sh/latest/build/getting_started/
-- **Migration guides (conda, poetry, uv)**: https://pixi.sh/latest/switching_from/conda/
+See [references/best-practices.md](references/best-practices.md) for setup, dependency management, reproducibility, and CI checklists — including the CI SHA-pinning requirement shown in `assets/github-actions-pixi.yml`.
