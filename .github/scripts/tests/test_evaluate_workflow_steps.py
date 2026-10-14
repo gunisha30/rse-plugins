@@ -103,3 +103,22 @@ def test_selected_skills_without_testcases_are_named(skills_tree):
     assert proc.returncode == 0, proc.stderr
     assert json.loads(out["eval-skills"]) == ["plugins/a/skills/python-testing"]
     assert "::warning::No testcases in uw-ssec/rse-plugins-testcases@main for: plugins/b/skills/podman" in proc.stdout
+
+
+def test_models_fetch_failure_fails_the_step(tmp_path):
+    """A rotated key or a proxy outage must fail the run, not list zero models and finish green."""
+    script = workflow_step("evaluate-all-skills.yml", "Fetch available models from LiteLLM proxy")
+    env = {"LITELLM_API_KEY": "k", "LITELLM_PROXY_URL": "https://proxy", "MODELS_FILTER": ""}
+    curl_401 = 'echo "curl: (22) The requested URL returned error: 401" >&2\nexit 22\n'
+    proc, out = run_step(script, tmp_path, env, {"curl": curl_401})
+    assert proc.returncode != 0
+    assert "models" not in out
+
+
+def test_empty_model_list_fails(tmp_path):
+    script = workflow_step("evaluate-all-skills.yml", "Fetch available models from LiteLLM proxy")
+    env = {"LITELLM_API_KEY": "k", "LITELLM_PROXY_URL": "https://proxy", "MODELS_JSON": json.dumps({"data": []}),
+           "MODELS_FILTER": ""}
+    proc, _ = run_step(script, tmp_path, env, {"curl": CURL_STUB})
+    assert proc.returncode == 1
+    assert "::error::The LiteLLM proxy lists no models" in proc.stdout

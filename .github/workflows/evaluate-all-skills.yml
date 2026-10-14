@@ -44,10 +44,16 @@ jobs:
           LITELLM_PROXY_URL: ${{ secrets.LITELLM_PROXY_URL }}
           MODELS_FILTER: ${{ inputs.models }}
         run: |
-          available=$(curl -fsSL \
+          # Not piped: run steps get `bash -e` without pipefail, which would hide a failed curl.
+          response=$(curl -fsSL \
             -H "Authorization: Bearer ${LITELLM_API_KEY}" \
-            "${LITELLM_PROXY_URL%/}/v1/models" | jq -c '[.data[].id] | sort')
+            "${LITELLM_PROXY_URL%/}/v1/models")
+          available=$(jq -c '[.data[].id] | sort' <<< "$response")
           echo "Available models: $available"
+          if [ "$(jq length <<< "$available")" -eq 0 ]; then
+            echo "::error::The LiteLLM proxy lists no models"
+            exit 1
+          fi
           models="$available"
           if [ -n "$MODELS_FILTER" ]; then
             wanted=$(jq -c --arg f "$MODELS_FILTER" -n '$f | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))')
