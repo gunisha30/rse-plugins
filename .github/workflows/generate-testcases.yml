@@ -1,63 +1,97 @@
-name: Generate Testcases for New Skill
+name: Generate Testcases for New Skills
 
+# Maintainer-triggered: run this after reviewing a PR that adds skills. It reads the PR's
+# SKILL.md files as data (never executes PR code) and, unless dry-run, opens a PR in the
+# private testcases repo for a human to review.
 on:
-  pull_request_target:
-    paths:
-      - 'plugins/**/SKILL.md'
-      - 'community-plugins/**/SKILL.md'
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Number of the rse-plugins PR that adds the new skill(s)
+        required: true
+        type: string
+      dry-run:
+        description: Upload the generated testcases as an artifact instead of opening a testcases PR
+        required: false
+        type: boolean
+        default: true
+      model:
+        description: LiteLLM model that drafts the testcases
+        required: false
+        type: string
+        default: claude-sonnet-4-6
+
+permissions: {}
 
 env:
   TESTCASES_REPO: ${{ github.repository_owner }}/rse-plugins-testcases
-  GENERATION_MODEL: claude-sonnet-4-6
 
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
     steps:
-      - name: Checkout base branch
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      - name: Validate PR number
+        env:
+          PR_NUMBER: ${{ inputs.pr-number }}
+        run: |
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr-number must be digits only"
+            exit 1
+          fi
 
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
+      - name: Checkout base branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: pr-content
           persist-credentials: false
 
       - name: Find added SKILL.md files
         id: find-skills
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+          REPO: ${{ github.repository }}
         run: |
-          added=$(gh api \
-            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --jq '[.[] | select(.status == "added") | select(.filename | test("SKILL\\.md$")) | .filename] | @json')
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha' > "$RUNNER_TEMP/head-sha.txt"
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.title' > "$RUNNER_TEMP/pr-title.txt"
+          added=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --jq '.[] | select(.status == "added") | select(.filename | test("^(plugins|community-plugins)/[^/]+/skills/[^/]+/SKILL\\.md$")) | .filename' \
+            | jq -R -s -c 'split("\n") | map(select(. != ""))')
 
-          count=$(echo "$added" | jq 'length')
-          echo "skills=$added" >> "$GITHUB_OUTPUT"
-          echo "count=$count"  >> "$GITHUB_OUTPUT"
+          count=$(jq length <<< "$added")
+          {
+            echo "head-sha=$(cat "$RUNNER_TEMP/head-sha.txt")"
+            echo "skills=$added"
+            echo "count=$count"
+          } >> "$GITHUB_OUTPUT"
 
-          if [ "$count" -eq "0" ]; then
+          if [ "$count" -eq 0 ]; then
             echo "No new SKILL.md files found in this PR (modification only)"
           else
             echo "Found $count new skill(s):"
-            echo "$added" | jq -r '.[]'
+            jq -r '.[]' <<< "$added"
           fi
+
+      - name: Checkout PR branch
+        if: steps.find-skills.outputs.count > 0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.find-skills.outputs.head-sha }}
+          path: pr-content
+          persist-credentials: false
 
       - name: Setup Python
         if: steps.find-skills.outputs.count > 0
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
 
       - name: Install dependencies
         if: steps.find-skills.outputs.count > 0
-        run: pip install openai pyyaml
+        run: python -m pip install 'openai==3.31.0' 'pyyaml==6.0.3'
 
       - name: Generate testcases
         if: steps.find-skills.outputs.count > 0
@@ -65,38 +99,58 @@ jobs:
           SKILLS: ${{ steps.find-skills.outputs.skills }}
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           LITELLM_PROXY_URL: ${{ secrets.LITELLM_PROXY_URL }}
+          GENERATION_MODEL: ${{ inputs.model }}
         run: |
           python .github/scripts/generate-testcases.py \
             --skills "$SKILLS" \
             --skill-root pr-content \
-            --output-dir generated-testcases \
-            --model "${{ env.GENERATION_MODEL }}"
+            --output-dir "$RUNNER_TEMP/generated-testcases" \
+            --warnings-file "$RUNNER_TEMP/validation-warnings.txt" \
+            --model "$GENERATION_MODEL"
+
+      - name: Upload generated testcases (dry run)
+        if: steps.find-skills.outputs.count > 0 && inputs.dry-run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-testcases-pr-${{ inputs.pr-number }}
+          path: |
+            ${{ runner.temp }}/generated-testcases/
+            ${{ runner.temp }}/validation-warnings.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Checkout testcases repo
-        if: steps.find-skills.outputs.count > 0
-        uses: actions/checkout@v4
+        if: steps.find-skills.outputs.count > 0 && !inputs.dry-run
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ env.TESTCASES_REPO }}
           # TEST_REPO_TOKEN: fine-grained PAT with Contents: Read/Write and Pull requests: Read/Write
           token: ${{ secrets.TEST_REPO_TOKEN }}
           path: testcases-repo
+          persist-credentials: true # zizmor: ignore[artipacked] the next step pushes; this checkout is never uploaded
 
       - name: Push branch and open PR in testcases repo
-        if: steps.find-skills.outputs.count > 0
+        if: steps.find-skills.outputs.count > 0 && !inputs.dry-run
         env:
           GH_TOKEN: ${{ secrets.TEST_REPO_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+          REPO: ${{ github.repository }}
         run: |
-          PR_NUM="${{ github.event.pull_request.number }}"
-          BRANCH="auto/testcases-pr-${PR_NUM}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_URL="${{ github.event.pull_request.html_url }}"
+          BRANCH="auto/testcases-pr-${PR_NUMBER}"
+          PR_TITLE=$(cat "$RUNNER_TEMP/pr-title.txt")
+          PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+          WARNINGS_FILE="$RUNNER_TEMP/validation-warnings.txt"
 
           cd testcases-repo
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "::error::Branch $BRANCH already exists in $TESTCASES_REPO. Merge or delete its PR, then re-run."
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
 
-          cp -r ../generated-testcases/. .
+          cp -R "$RUNNER_TEMP/generated-testcases/." .
 
           git add .
           if git diff --cached --quiet; then
@@ -104,30 +158,20 @@ jobs:
             exit 0
           fi
 
-          git commit -m "feat: add generated testcases for ${{ github.repository }}#${PR_NUM}"
-          git push origin "$BRANCH" --force
+          git commit -m "feat: add generated testcases for ${REPO}#${PR_NUMBER}"
+          git push origin "$BRANCH"
 
-          existing=$(gh pr list \
-            --repo "${{ env.TESTCASES_REPO }}" \
+          {
+            printf 'Automatically generated testcases for %s.\n\nReview and adjust the generated cases before merging.\n' "$PR_URL"
+            if [ -s "$WARNINGS_FILE" ]; then
+              printf '\n**Validation warnings** (these files may need manual fixes):\n\n'
+              sed 's/^/- /' "$WARNINGS_FILE"
+            fi
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          gh pr create \
+            --repo "$TESTCASES_REPO" \
+            --base main \
             --head "$BRANCH" \
-            --json number \
-            --jq '.[0].number')
-
-          BODY=$(printf 'Automatically generated testcases for %s.\n\nReview and adjust the generated cases before merging.' "$PR_URL")
-          if [ -f "../generated-testcases/.validation-warnings" ]; then
-            BODY="${BODY}$(printf '\n\n**Validation warnings** (these files may need manual fixes):\n')"
-            while IFS= read -r line; do
-              BODY="${BODY}$(printf '\n- %s' "$line")"
-            done < "../generated-testcases/.validation-warnings"
-          fi
-
-          if [ -z "$existing" ]; then
-            gh pr create \
-              --repo "${{ env.TESTCASES_REPO }}" \
-              --base main \
-              --head "$BRANCH" \
-              --title "testcases: ${PR_TITLE}" \
-              --body "$BODY"
-          else
-            echo "PR #${existing} already exists for branch ${BRANCH}; branch updated"
-          fi
+            --title "testcases: ${PR_TITLE}" \
+            --body-file "$RUNNER_TEMP/pr-body.md"
