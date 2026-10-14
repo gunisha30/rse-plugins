@@ -89,7 +89,7 @@ twine check dist/*
 
 # 3. Test on TestPyPI
 twine upload --repository testpypi dist/*
-pip install --index-url https://test.pypi.org/simple/ my-sci-package
+pip install --index-url https://test.pypi.org/simple/ <my-sci-package>
 # If install fails: check package name availability, verify dist/ contents with tar -tvf dist/*.tar.gz
 
 # 4. Publish to PyPI
