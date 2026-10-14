@@ -3,7 +3,8 @@ import os
 import subprocess
 
 import pytest
-from conftest import run_step, workflow_step
+import yaml
+from conftest import WORKFLOWS, run_step, workflow_step
 
 HOSTILE_TITLE = 'feat: $(touch pwned) `touch pwned2` "quoted" ; echo hi'
 
@@ -100,3 +101,10 @@ def test_push_refuses_to_overwrite_existing_branch(testcases_checkout):
     assert "already exists" in proc.stdout
     calls = gh_calls(tmp_path) if (tmp_path / "gh-calls").exists() else []
     assert not any(c[:2] == ["pr", "create"] for c in calls)
+
+
+def test_dry_run_upload_keeps_drafts_when_one_skill_fails():
+    """generate-testcases.py exits 1 if any skill fails; the drafts of the others must still upload."""
+    doc = yaml.safe_load((WORKFLOWS / "generate-testcases.yml").read_text(encoding="utf-8"))
+    step = next(s for s in doc["jobs"]["generate"]["steps"] if s.get("name") == "Upload generated testcases (dry run)")
+    assert "!cancelled()" in step["if"]

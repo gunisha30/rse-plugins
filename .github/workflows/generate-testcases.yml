@@ -108,8 +108,9 @@ jobs:
             --warnings-file "$RUNNER_TEMP/validation-warnings.txt" \
             --model "$GENERATION_MODEL"
 
+      # !cancelled(): keep the drafts that did generate when another skill failed.
       - name: Upload generated testcases (dry run)
-        if: steps.find-skills.outputs.count > 0 && inputs.dry-run
+        if: ${{ !cancelled() && steps.find-skills.outputs.count > 0 && inputs.dry-run }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: generated-testcases-pr-${{ inputs.pr-number }}
