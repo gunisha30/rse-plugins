@@ -110,16 +110,19 @@ jobs:
         id: discover
         env:
           SKILLS_FILTER: ${{ inputs.skills }}
+          TESSL_ENABLED: ${{ steps.tessl.outputs.enabled }}
         run: |
           all=$(find plugins community-plugins -name "SKILL.md" -exec dirname {} \; | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
           if [ -n "$SKILLS_FILTER" ]; then
-            all=$(jq -c --arg f "$SKILLS_FILTER" \
-              '($f | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))) as $want
-               | map(select(. as $p | ($want | index($p)) or ($want | index($p | split("/") | last))))' <<< "$all")
-            if [ "$(jq length <<< "$all")" -eq 0 ]; then
-              echo "::error::No skill matches the skills input: $SKILLS_FILTER"
+            wanted=$(jq -c -n --arg f "$SKILLS_FILTER" '$f | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))')
+            # Every entry must name a skill (by name or path), so one typo cannot silently shrink the run.
+            unknown=$(jq -r --argjson want "$wanted" '$want - map(., (split("/") | last)) | join(", ")' <<< "$all")
+            if [ -n "$unknown" ] || [ "$(jq length <<< "$wanted")" -eq 0 ]; then
+              echo "::error::No skill matches the skills input: ${unknown:-$SKILLS_FILTER}"
               exit 1
             fi
+            all=$(jq -c --argjson want "$wanted" \
+              'map(select(. as $p | ($want | index($p)) or ($want | index($p | split("/") | last))))' <<< "$all")
           fi
           echo "all-skills=$all" >> "$GITHUB_OUTPUT"
           echo "count=$(jq length <<< "$all")" >> "$GITHUB_OUTPUT"
@@ -128,6 +131,22 @@ jobs:
           eval_skills=$(jq -c --argjson have "$with_evals" 'map(select(. as $p | $have | index($p)))' <<< "$all")
           echo "eval-skills=$eval_skills" >> "$GITHUB_OUTPUT"
           echo "eval-count=$(jq length <<< "$eval_skills")" >> "$GITHUB_OUTPUT"
+
+          # A run that evaluates nothing must say so instead of finishing green.
+          if [ "$(jq length <<< "$eval_skills")" -eq 0 ]; then
+            message="None of the $(jq length <<< "$all") selected skill(s) has testcases in $TEST_REPO@$TEST_BRANCH"
+            if [ "$TESSL_ENABLED" = "true" ]; then
+              echo "::warning::$message; only the Tessl review will run."
+            else
+              echo "::error::$message, and the Tessl review is off, so there is nothing to evaluate."
+              exit 1
+            fi
+          elif [ -n "$SKILLS_FILTER" ]; then
+            untested=$(jq -r --argjson have "$eval_skills" '. - $have | join(", ")' <<< "$all")
+            if [ -n "$untested" ]; then
+              echo "::warning::No testcases in $TEST_REPO@$TEST_BRANCH for: $untested"
+            fi
+          fi
 
       - name: Summary
         env:

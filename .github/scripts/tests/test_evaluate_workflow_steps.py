@@ -69,3 +69,37 @@ def test_skills_filter_typo_fails_loudly(skills_tree):
     proc, _ = run_step(script, skills_tree, {"SKILLS_FILTER": "python-tsting", "TEST_DIR": ".testcases"})
     assert proc.returncode == 1
     assert "No skill matches the skills input: python-tsting" in proc.stdout
+
+
+def test_skills_filter_partial_typo_fails_and_names_it(skills_tree):
+    script = workflow_step("evaluate-all-skills.yml", "Discover skills")
+    proc, _ = run_step(script, skills_tree, {"SKILLS_FILTER": "python-testing, python-tsting", "TEST_DIR": ".testcases"})
+    assert proc.returncode == 1
+    assert "::error::No skill matches the skills input: python-tsting\n" in proc.stdout
+
+
+TESTCASES_ENV = {"TEST_DIR": ".testcases", "TEST_REPO": "uw-ssec/rse-plugins-testcases", "TEST_BRANCH": "main"}
+
+
+def test_selection_without_testcases_fails_when_tessl_is_off(skills_tree):
+    script = workflow_step("evaluate-all-skills.yml", "Discover skills")
+    proc, _ = run_step(script, skills_tree, {**TESTCASES_ENV, "SKILLS_FILTER": "podman", "TESSL_ENABLED": "false"})
+    assert proc.returncode == 1
+    assert "::error::None of the 1 selected skill(s) has testcases in uw-ssec/rse-plugins-testcases@main" in proc.stdout
+    assert "nothing to evaluate" in proc.stdout
+
+
+def test_selection_without_testcases_only_warns_when_tessl_is_on(skills_tree):
+    script = workflow_step("evaluate-all-skills.yml", "Discover skills")
+    proc, out = run_step(script, skills_tree, {**TESTCASES_ENV, "SKILLS_FILTER": "podman", "TESSL_ENABLED": "true"})
+    assert proc.returncode == 0, proc.stderr
+    assert out["eval-count"] == "0"
+    assert "::warning::None of the 1 selected skill(s) has testcases" in proc.stdout
+
+
+def test_selected_skills_without_testcases_are_named(skills_tree):
+    script = workflow_step("evaluate-all-skills.yml", "Discover skills")
+    proc, out = run_step(script, skills_tree, {**TESTCASES_ENV, "SKILLS_FILTER": "python-testing, podman"})
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(out["eval-skills"]) == ["plugins/a/skills/python-testing"]
+    assert "::warning::No testcases in uw-ssec/rse-plugins-testcases@main for: plugins/b/skills/podman" in proc.stdout
