@@ -24,11 +24,22 @@ on:
         required: false
         type: number
         default: 0
+    secrets:
+      LITELLM_API_KEY:
+        required: true
+      LITELLM_PROXY_URL:
+        required: true
+      TEST_REPO_TOKEN:
+        required: false
+
+permissions: {}
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -36,10 +47,12 @@ jobs:
         skill: ${{ fromJSON(inputs.skills) }}
         mode: [baseline, skill]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Checkout evals for skill
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ inputs.test-repo }}
           ref: ${{ inputs.test-branch }}
@@ -51,30 +64,41 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Sync evals into skill directory
+        env:
+          TEST_DIR: ${{ inputs.test-dir }}
+          SKILL_PATH: ${{ matrix.skill }}
         run: |
-          source_dir="${{ inputs.test-dir }}/${{ matrix.skill }}/evals"
-          dest_dir="${{ matrix.skill }}/evals"
+          source_dir="$TEST_DIR/$SKILL_PATH/evals"
+          dest_dir="$SKILL_PATH/evals"
           if [ -d "$source_dir" ]; then
             mkdir -p "$dest_dir"
             cp -R "$source_dir"/. "$dest_dir"/
           else
-            echo "No evals found for ${{ matrix.skill }}"
+            echo "No evals found for $SKILL_PATH"
           fi
 
-      - name: Derive skill name
-        id: skill-name
-        run: echo "value=$(basename '${{ matrix.skill }}')" >> "$GITHUB_OUTPUT"
+      - name: Derive names
+        id: names
+        env:
+          SKILL_PATH: ${{ matrix.skill }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          echo "skill=$(basename "$SKILL_PATH")" >> "$GITHUB_OUTPUT"
+          # Artifact names reject / : and other characters LiteLLM model ids may contain.
+          echo "model=$(printf '%s' "$MODEL" | tr -c 'A-Za-z0-9._-' '-')" >> "$GITHUB_OUTPUT"
 
       - name: Evaluate skill
         id: evaluate
-        uses: yongsinp/skill-eval-action@main
+        # Baseline runs measure the model without the skill, so missing the threshold there is expected.
+        continue-on-error: ${{ matrix.mode == 'baseline' }}
+        uses: uw-ssec/skill-eval-action@91593a1a40b2afbfc516ed0096868c66f6da6100 # main (2026-06-02)
         env:
           COPILOT_PROVIDER_BASE_URL: ${{ secrets.LITELLM_PROXY_URL }}
           COPILOT_PROVIDER_TYPE: openai
           COPILOT_PROVIDER_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           COPILOT_MODEL: ${{ inputs.model }}
         with:
-          skill-name: ${{ steps.skill-name.outputs.value }}
+          skill-name: ${{ steps.names.outputs.skill }}
           skill-path: ${{ matrix.skill }}
           api-key: ${{ secrets.LITELLM_API_KEY }}
           model: ${{ inputs.model }}
@@ -85,8 +109,10 @@ jobs:
           baseline: ${{ matrix.mode == 'baseline' }}
 
       - name: Sleep after evaluation
-        if: inputs.sleep-seconds > 0
-        run: sleep ${{ inputs.sleep-seconds }}
+        if: ${{ !cancelled() && inputs.sleep-seconds > 0 }}
+        env:
+          SLEEP_SECONDS: ${{ inputs.sleep-seconds }}
+        run: sleep "$SLEEP_SECONDS"
 
       - name: Save eval JSON
         if: always()
@@ -94,20 +120,16 @@ jobs:
           PASS_RATE: ${{ steps.evaluate.outputs.pass-rate }}
           PASSED: ${{ steps.evaluate.outputs.passed }}
           TOTAL: ${{ steps.evaluate.outputs.total }}
+          SKILL_NAME: ${{ steps.names.outputs.skill }}
+          SAFE_MODEL: ${{ steps.names.outputs.model }}
+          SKILL_PATH: ${{ matrix.skill }}
+          MODEL: ${{ inputs.model }}
+          MODE: ${{ matrix.mode }}
         run: |
-          skill_name='${{ steps.skill-name.outputs.value }}'
-          skill_path='${{ matrix.skill }}'
-          model_name='${{ inputs.model }}'
-          mode='${{ matrix.mode }}'
-          safe_model=$(echo "$model_name" | tr '/: ' '---')
           mkdir -p /tmp/eval-results
 
-          pass_rate="${PASS_RATE}"
-          passed="${PASSED}"
-          total="${TOTAL}"
-
           # Read token usage and per-case results from summary.json
-          summary_file="$RUNNER_TEMP/skill-eval/${skill_name}/summary.json"
+          summary_file="$RUNNER_TEMP/skill-eval/${SKILL_NAME}/summary.json"
           if [ -f "$summary_file" ]; then
             total_tokens=$(jq -r '.total_tokens // ""' "$summary_file")
             total_time=$(jq -r '.total_time // ""' "$summary_file")
@@ -119,12 +141,12 @@ jobs:
           fi
 
           jq -n \
-            --arg skill        "$skill_path" \
-            --arg model        "$model_name" \
-            --arg mode         "$mode" \
-            --arg pass_rate    "$pass_rate" \
-            --arg passed       "$passed" \
-            --arg total        "$total" \
+            --arg skill        "$SKILL_PATH" \
+            --arg model        "$MODEL" \
+            --arg mode         "$MODE" \
+            --arg pass_rate    "$PASS_RATE" \
+            --arg passed       "$PASSED" \
+            --arg total        "$TOTAL" \
             --arg total_tokens "$total_tokens" \
             --arg total_time   "$total_time" \
             --argjson results  "$results" \
@@ -139,12 +161,12 @@ jobs:
               total_time:   $total_time,
               results:      $results
             }' \
-            > "/tmp/eval-results/${skill_name}__${safe_model}__${mode}.json"
+            > "/tmp/eval-results/${SKILL_NAME}__${SAFE_MODEL}__${MODE}.json"
 
       - name: Upload eval JSON
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: eval-result--${{ steps.skill-name.outputs.value }}--${{ inputs.model }}--${{ matrix.mode }}
+          name: eval-result--${{ steps.names.outputs.skill }}--${{ steps.names.outputs.model }}--${{ matrix.mode }}
           path: /tmp/eval-results/
           retention-days: 1
