@@ -57,28 +57,7 @@
 
 ## Assumptions
 
-[Document beliefs that this plan depends on but has NOT fully verified.
-Do NOT restate facts from Current State Analysis — those are verified findings.
-
-An assumption is something you believe to be true based on documentation,
-convention, or inference, but haven't confirmed through direct code
-inspection or testing. If any proves false, the plan may need revision.
-
-Common categories to consider:
-- **Library/framework behavior** — undocumented internals you're relying on
-- **Environment** — infrastructure, services, or config you expect to exist
-- **Concurrency/scale** — thread safety, data isolation, or load characteristics
-- **Data characteristics** — format, volume, or schema stability
-- **External contracts** — API behavior, third-party SLAs, or protocol guarantees
-
-Examples of GOOD assumptions (unverified, plan-critical):
-- "LangGraph loads full message history (not just last checkpoint) when resuming a thread_id"
-- "The payments API returns idempotent responses for duplicate request IDs"
-
-Examples of BAD assumptions (these belong elsewhere):
-- "PostgresSaver stores checkpoints by thread_id" - This is a verified fact; put in Current State Analysis
-- "Postgres is running" - This is a prerequisite; put in Testing Strategy > Test Data Requirements
-- "We should use JWT" - This is a decision; put in Implementation Approach]
+[Beliefs this plan relies on that have NOT been confirmed by reading code or running something. Confirmed facts go in Current State Analysis, setup steps in Testing Strategy, and choices in Implementation Approach. If every belief was confirmed, write "None" and list what was checked.]
 
 - **Assumption:** [Description]
   - **Basis:** [Why you believe this — documentation, convention, or inference]
