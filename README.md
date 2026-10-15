@@ -37,6 +37,8 @@ This repository provides specialized agents and skills that understand the uniqu
 
 ## Installation
 
+### Claude Code
+
 To use these agents and skills in Claude Code, add this repository to your plugin marketplace:
 
 ```bash
@@ -44,6 +46,20 @@ To use these agents and skills in Claude Code, add this repository to your plugi
 ```
 
 Once installed, the agents and skills will be available in your Claude Code environment and can be invoked when working on scientific software projects.
+
+### VS Code
+
+To configure plugin marketplaces in VS Code, use the `chat.plugins.marketplaces` setting.
+
+Here's an example that can be added to the `settings.json` file.
+
+```json
+"chat.plugins.marketplaces": [
+    "uw-ssec/rse-plugins"
+]
+```
+
+([Documentation link](https://code.visualstudio.com/docs/agent-customization/agent-plugins#_configure-plugin-marketplaces))
 
 ## Available Plugins
 
@@ -81,23 +97,27 @@ Domain-specific scientific computing agents and skills for astronomy, geospatial
 
 ### AI Research Workflows Plugin
 
-Structured AI-enabled workflow for complex software development tasks with explicit phases for research, planning, experimentation, implementation, and validation.
+Skills-first research workflows for Research Software Engineers and researchers — covering the full arc from understanding code and surveying prior art through planning, experimentation, implementation, validation, reproducibility, and handoff.
 
 **Agent:**
 - **Research Workflow Orchestrator** - Guides users through structured development workflows from research to validated implementation
 
 **Commands:**
-- `/research` - Document and understand existing code, patterns, and architecture
-- `/plan` - Create detailed, testable implementation plans through interactive research
-- `/iterate-plan` - Refine existing plans based on feedback or changed requirements
-- `/experiment` - Try multiple approaches before committing to implementation (optional)
-- `/implement` - Execute the plan phase by phase with verification checkpoints
-- `/validate` - Systematically verify implementation against plan criteria
+- `/research` - Document how existing code works
+- `/plan` - Create a phased implementation plan
+- `/iterate-plan` - Revise an existing plan
+- `/experiment` - Compare approaches with real prototype code
+- `/implement` - Execute an approved plan phase by phase
+- `/validate` - Verify implementation against plan criteria
+- `/handoff` - Write a context-transfer document
+- `/prior-art` - Survey tools, papers, and methods outside the codebase
+- `/reproduce` - Capture provenance so a result can be reproduced
+- `/harden` - Add correctness and regression tests to research code
 
-**Skill:**
-- **research-workflow-management** - Systematic workflow methodology creating auditable trail of technical decisions in `.agents/` directory
+**Skills (11):**
+- **using-research-workflows** (meta), **researching-codebases**, **planning-implementations**, **iterating-plans**, **running-experiments**, **implementing-plans**, **validating-implementations**, **creating-handoffs**, **researching-prior-art**, **ensuring-reproducibility**, **hardening-research-code**
 
-**When to use:** Complex feature development, architectural changes, exploratory implementation, technical research tasks, systematic code refactoring, documented decision-making
+**When to use:** Complex feature development, architectural changes, exploratory implementation, prior-art surveys, reproducibility capture, research code hardening, context-transfer handoffs
 
 ### Project Management Plugin
 
@@ -153,6 +173,21 @@ Generate and develop hydroclimatological data download scripts for the GAIA proj
 
 **When to use:** Downloading hydroclimatological data for GAIA geoscience research, creating reproducible data pipelines, setting up new data download workflows
 
+### UI/UX Design Team Plugin
+
+Comprehensive UI/UX design team simulation with 10 specialized agents covering the full design lifecycle — user research, information architecture, interaction design, visual design, motion design, design systems engineering, accessibility auditing, UX writing, and design operations.
+
+**Agent:**
+- **UX Design Lead** - Coordinator agent that facilitates design thinking, conducts design critiques, and orchestrates 9 specialist agents (research, information architecture, interaction, visual, motion, design systems, accessibility, writing, ops) across the full design lifecycle
+
+**Commands (10):**
+- `/design-review`, `/audit-accessibility`, `/create-design-system`, `/create-persona`, `/create-type-scale`, `/design-handoff`, `/evaluate-usability`, `/frontend-design`, `/generate-palette`, `/map-journey`
+
+**Skills (22):**
+- **user-research**, **information-architecture**, **wireframing**, **visual-design**, **motion-design**, **design-tokens**, **design-system-creation**, **component-library**, **accessibility-audit**, **ux-writing**, **responsive-design**, **css-architecture**, **frontend-components**, **usability-evaluation**, **design-philosophies**, **design-case-studies**, **user-journey-mapping**, **ab-testing-strategy**, **design-handoff**, **color-systems**, **typography-systems**, **grid-layout-systems**
+
+**When to use:** UI/UX design work, design system creation, accessibility audits, usability evaluation, user research and persona creation, design reviews, frontend component design, design-to-development handoff
+
 Browse the [plugins directory](plugins/) and [community-plugins directory](community-plugins/) to explore all available plugins.
 
 ## Repository Structure
@@ -182,26 +217,26 @@ rse-plugins/
 │   │   └── skills/
 │   │       ├── xarray-for-multidimensional-data/
 │   │       └── astropy-fundamentals/
-│   ├── ai-research-workflows/                          # AI-enabled research workflow plugin
+│   ├── ai-research-workflows/                          # Skills-first research workflow plugin
 │   │   ├── .claude-plugin/
 │   │   │   └── plugin.json
 │   │   ├── agents/
 │   │   │   └── research-workflow-orchestrator.md
-│   │   ├── commands/
-│   │   │   ├── research.md
-│   │   │   ├── plan.md
-│   │   │   ├── iterate-plan.md
-│   │   │   ├── experiment.md
-│   │   │   ├── implement.md
-│   │   │   └── validate.md
-│   │   └── skills/
-│   │       └── research-workflow-management/
-│   │           ├── SKILL.md
-│   │           └── assets/
-│   │               ├── research-template.md
-│   │               ├── plan-template.md
-│   │               ├── experiment-template.md
-│   │               └── implement-template.md
+│   │   ├── commands/                                 # 10 thin wrappers (research, plan, iterate-plan,
+│   │   │   └── ...                                   #   experiment, implement, validate, handoff,
+│   │   │                                             #   prior-art, reproduce, harden)
+│   │   └── skills/                                   # 11 skills
+│   │       ├── using-research-workflows/             #   meta-skill
+│   │       ├── researching-codebases/
+│   │       ├── planning-implementations/
+│   │       ├── iterating-plans/
+│   │       ├── running-experiments/
+│   │       ├── implementing-plans/
+│   │       ├── validating-implementations/
+│   │       ├── creating-handoffs/
+│   │       ├── researching-prior-art/
+│   │       ├── ensuring-reproducibility/
+│   │       └── hardening-research-code/
 │   └── project-management/                              # Project lifecycle management plugin
 │       ├── .claude-plugin/
 │       │   └── plugin.json

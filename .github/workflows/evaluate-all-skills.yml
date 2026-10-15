@@ -1,0 +1,287 @@
+name: Evaluate All Skills
+on:
+  workflow_dispatch:
+    inputs:
+      skills:
+        description: Comma-separated skill names or paths to run (empty = every skill)
+        required: false
+        type: string
+        default: ''
+      models:
+        description: Comma-separated LiteLLM model ids (empty = every model on the proxy)
+        required: false
+        type: string
+        default: ''
+      sleep-seconds:
+        description: Pause after each eval job to stay under the proxy rate limit
+        required: false
+        type: number
+        default: 300
+
+permissions: {}
+
+env:
+  PASS_THRESHOLD: '80'
+  TEST_REPO: ${{ github.repository_owner }}/rse-plugins-testcases
+  TEST_BRANCH: main
+  TEST_DIR: .testcases
+  # tessl review run quality needs CLI >= 0.90.0.
+  TESSL_VERSION: '0.115.0'
+
+jobs:
+  list-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      models: ${{ steps.list.outputs.models }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - name: Fetch available models from LiteLLM proxy
+        id: list
+        env:
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          LITELLM_PROXY_URL: ${{ secrets.LITELLM_PROXY_URL }}
+          MODELS_FILTER: ${{ inputs.models }}
+        run: |
+          # Not piped: run steps get `bash -e` without pipefail, which would hide a failed curl.
+          response=$(curl -fsSL \
+            -H "Authorization: Bearer ${LITELLM_API_KEY}" \
+            "${LITELLM_PROXY_URL%/}/v1/models")
+          available=$(jq -c '[.data[].id] | sort' <<< "$response")
+          echo "Available models: $available"
+          if [ "$(jq length <<< "$available")" -eq 0 ]; then
+            echo "::error::The LiteLLM proxy lists no models"
+            exit 1
+          fi
+          models="$available"
+          if [ -n "$MODELS_FILTER" ]; then
+            wanted=$(jq -c --arg f "$MODELS_FILTER" -n '$f | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))')
+            unknown=$(jq -r -n --argjson want "$wanted" --argjson have "$available" '$want - $have | join(", ")')
+            if [ -n "$unknown" ]; then
+              echo "::error::Unknown model(s): $unknown. Available: $available"
+              exit 1
+            fi
+            models=$(jq -c -n --argjson want "$wanted" --argjson have "$available" '$have | map(select(. as $m | $want | index($m)))')
+          fi
+          echo "models=$models" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<< "$models")" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          COUNT: ${{ steps.list.outputs.count }}
+        run: echo "Evaluating with $COUNT model(s)"
+
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      all-skills: ${{ steps.discover.outputs.all-skills }}
+      count: ${{ steps.discover.outputs.count }}
+      eval-skills: ${{ steps.discover.outputs.eval-skills }}
+      eval-count: ${{ steps.discover.outputs.eval-count }}
+      tessl-enabled: ${{ steps.tessl.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout evals testcases
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ env.TEST_REPO }}
+          ref: ${{ env.TEST_BRANCH }}
+          path: ${{ env.TEST_DIR }}
+          persist-credentials: false
+          # If the testcases repo is private, set TEST_REPO_TOKEN (fine-grained PAT with Contents: Read).
+          # Otherwise the workflow will fall back to GITHUB_TOKEN (only works for the same repo or public repos).
+          token: ${{ secrets.TEST_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          sparse-checkout: |
+            plugins/**/skills/**/evals
+            community-plugins/**/skills/**/evals
+          sparse-checkout-cone-mode: false
+
+      - name: Check for optional Tessl token
+        id: tessl
+        env:
+          TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
+        run: |
+          if [ -n "$TESSL_TOKEN" ]; then enabled=true; else enabled=false; fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          echo "Tessl review enabled: $enabled"
+
+      - name: Discover skills
+        id: discover
+        env:
+          SKILLS_FILTER: ${{ inputs.skills }}
+          TESSL_ENABLED: ${{ steps.tessl.outputs.enabled }}
+        run: |
+          all=$(find plugins community-plugins -name "SKILL.md" -exec dirname {} \; | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          if [ -n "$SKILLS_FILTER" ]; then
+            wanted=$(jq -c -n --arg f "$SKILLS_FILTER" '$f | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))')
+            # Every entry must name a skill (by name or path), so one typo cannot silently shrink the run.
+            unknown=$(jq -r --argjson want "$wanted" '$want - map(., (split("/") | last)) | join(", ")' <<< "$all")
+            if [ -n "$unknown" ] || [ "$(jq length <<< "$wanted")" -eq 0 ]; then
+              echo "::error::No skill matches the skills input: ${unknown:-$SKILLS_FILTER}"
+              exit 1
+            fi
+            all=$(jq -c --argjson want "$wanted" \
+              'map(select(. as $p | ($want | index($p)) or ($want | index($p | split("/") | last))))' <<< "$all")
+          fi
+          echo "all-skills=$all" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<< "$all")" >> "$GITHUB_OUTPUT"
+
+          with_evals=$(find "$TEST_DIR/plugins" "$TEST_DIR/community-plugins" -type d -name "evals" 2>/dev/null | sed "s|^$TEST_DIR/||; s|/evals$||" | sort -u | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          eval_skills=$(jq -c --argjson have "$with_evals" 'map(select(. as $p | $have | index($p)))' <<< "$all")
+          echo "eval-skills=$eval_skills" >> "$GITHUB_OUTPUT"
+          echo "eval-count=$(jq length <<< "$eval_skills")" >> "$GITHUB_OUTPUT"
+
+          # A run that evaluates nothing must say so instead of finishing green.
+          if [ "$(jq length <<< "$eval_skills")" -eq 0 ]; then
+            message="None of the $(jq length <<< "$all") selected skill(s) has testcases in $TEST_REPO@$TEST_BRANCH"
+            if [ "$TESSL_ENABLED" = "true" ]; then
+              echo "::warning::$message; only the Tessl review will run."
+            else
+              echo "::error::$message, and the Tessl review is off, so there is nothing to evaluate."
+              exit 1
+            fi
+          elif [ -n "$SKILLS_FILTER" ]; then
+            untested=$(jq -r --argjson have "$eval_skills" '. - $have | join(", ")' <<< "$all")
+            if [ -n "$untested" ]; then
+              echo "::warning::No testcases in $TEST_REPO@$TEST_BRANCH for: $untested"
+            fi
+          fi
+
+      - name: Summary
+        env:
+          COUNT: ${{ steps.discover.outputs.count }}
+          EVAL_COUNT: ${{ steps.discover.outputs.eval-count }}
+        run: echo "Found $COUNT skills ($EVAL_COUNT with evals)"
+
+  review:
+    needs: [discover]
+    if: needs.discover.outputs.tessl-enabled == 'true' && needs.discover.outputs.count > 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: ${{ fromJSON(needs.discover.outputs.all-skills) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Tessl
+        uses: tesslio/setup-tessl@25ec223fc0da33b41b8044ff5ab2b85235f4f91e # v2
+        with:
+          version: ${{ env.TESSL_VERSION }}
+
+      - name: Derive skill name
+        id: skill-name
+        env:
+          SKILL_PATH: ${{ matrix.skill }}
+        run: echo "value=$(basename "$SKILL_PATH")" >> "$GITHUB_OUTPUT"
+
+      # Advisory only: this step never fails the job; the summary reports scores and errors.
+      - name: Review SKILL.md
+        id: review
+        env:
+          TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
+          TESSL_WORKSPACE: ${{ vars.TESSL_WORKSPACE }}
+          SKILL_PATH: ${{ matrix.skill }}
+        run: |
+          args=(review run quality --json --threshold 0)
+          if [ -n "$TESSL_WORKSPACE" ]; then args+=(--workspace "$TESSL_WORKSPACE"); fi
+          set +e
+          tessl "${args[@]}" "$SKILL_PATH" > /tmp/tessl-raw.txt 2>&1
+          review_exit=$?
+          set -e
+          cat /tmp/tessl-raw.txt
+          echo "exit-code=$review_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Save review JSON
+        if: always()
+        env:
+          SKILL_PATH: ${{ matrix.skill }}
+          SKILL_NAME: ${{ steps.skill-name.outputs.value }}
+          EXIT_CODE: ${{ steps.review.outputs.exit-code }}
+        run: |
+          python3 .github/scripts/tessl-review-record.py \
+            --skill     "$SKILL_PATH" \
+            --raw       /tmp/tessl-raw.txt \
+            --exit-code "${EXIT_CODE:-1}" \
+            --output    "/tmp/review-results/${SKILL_NAME}.json"
+
+      - name: Upload review JSON
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: review-result--${{ steps.skill-name.outputs.value }}
+          path: /tmp/review-results/
+          retention-days: 1
+
+  evaluate:
+    needs: [list-models, discover]
+    if: needs.discover.outputs.eval-count > 0 && needs.list-models.outputs.count > 0
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJSON(needs.list-models.outputs.models) }}
+    uses: ./.github/workflows/evaluate-per-model.yml
+    # env context is unavailable in reusable workflow `with` blocks; values duplicated from top-level env.
+    with:
+      model: ${{ matrix.model }}
+      skills: ${{ needs.discover.outputs.eval-skills }}
+      pass-threshold: '80'
+      test-repo: ${{ github.repository_owner }}/rse-plugins-testcases
+      test-branch: main
+      test-dir: .testcases
+      sleep-seconds: ${{ inputs.sleep-seconds }}
+    secrets:
+      LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+      LITELLM_PROXY_URL: ${{ secrets.LITELLM_PROXY_URL }}
+      TEST_REPO_TOKEN: ${{ secrets.TEST_REPO_TOKEN }}
+
+  summarize:
+    needs: [discover, review, evaluate]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Download all review JSONs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: review-result--*
+          path: /tmp/all-reviews
+          merge-multiple: true
+
+      - name: Download all eval JSONs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: eval-result--*
+          path: /tmp/all-evals
+          merge-multiple: true
+
+      - name: Render merged summaries
+        env:
+          TESSL_ENABLED: ${{ needs.discover.outputs.tessl-enabled == 'true' }}
+        run: |
+          python3 .github/scripts/render-eval-summary.py \
+            --reviews-dir   /tmp/all-reviews \
+            --evals-dir     /tmp/all-evals \
+            --threshold     "$PASS_THRESHOLD" \
+            --tessl-enabled "$TESSL_ENABLED" \
+            --output        "$GITHUB_STEP_SUMMARY"

@@ -70,7 +70,7 @@
         {
             "name": "ai-research-workflows",
             "source": "./plugins/ai-research-workflows",
-            "description": "Structured AI-enabled research workflows for software development: Research, Plan, Experiment, Implement",
+            "description": "Skills-first research workflows for Research Software Engineers and Researchers: research, prior-art, plan, experiment, implement, validate, reproduce, harden, and handoff — interactive when you want collaboration, direct when you don't.",
             "homepage": "https://github.com/uw-ssec/rse-plugins",
             "repository": "https://github.com/uw-ssec/rse-plugins",
             "license": "BSD-3-Clause",
@@ -82,7 +82,11 @@
                 "experimentation",
                 "validation",
                 "software-development",
-                "research-software-engineering"
+                "research-software-engineering",
+                "skills",
+                "reproducibility",
+                "prior-art",
+                "research-software"
             ],
             "category": "development",
             "strict": false
@@ -110,9 +114,6 @@
             "name": "gaia-data-downloader",
             "source": "./community-plugins/gaia-data-downloader",
             "description": "Generate and develop hydroclimatological data download scripts for GAIA geoscience research",
-            "name": "zarr-chunk-optimization",
-            "source": "./plugins/zarr-chunk-optimization",
-            "description": "Benchmark and optimize Zarr chunking strategies for multi-dimensional scientific datasets on cloud object stores (S3, GCS)",
             "homepage": "https://github.com/uw-ssec/rse-plugins",
             "repository": "https://github.com/uw-ssec/rse-plugins",
             "license": "BSD-3-Clause",
@@ -127,7 +128,26 @@
                 "environmental-data"
             ],
             "category": "data-science",
-            "strict": false,
+            "strict": false
+        },
+        {
+            "name": "zarr-chunk-optimization",
+            "source": "./plugins/zarr-chunk-optimization",
+            "description": "Benchmark and optimize Zarr chunking strategies for multi-dimensional scientific datasets on cloud object stores (S3, GCS)",
+            "homepage": "https://github.com/uw-ssec/rse-plugins",
+            "repository": "https://github.com/uw-ssec/rse-plugins",
+            "license": "BSD-3-Clause",
+            "keywords": [
+                "zarr",
+                "chunking",
+                "benchmarking",
+                "cloud-storage",
+                "performance-optimization",
+                "rechunking",
+                "access-patterns",
+                "scientific-data",
+                "research-software"
+            ],
             "category": "data-science",
             "strict": false
         },
@@ -169,6 +189,28 @@
                 "software-design"
             ],
             "category": "research",
+            "strict": false
+        },
+        {
+            "name": "uiux-design-team",
+            "source": "./plugins/uiux-design-team",
+            "description": "Comprehensive UI/UX design team simulation with 10 specialized agents covering user research, information architecture, interaction and visual design, accessibility auditing, design systems, and design review orchestration",
+            "homepage": "https://github.com/uw-ssec/rse-plugins",
+            "repository": "https://github.com/uw-ssec/rse-plugins",
+            "license": "BSD-3-Clause",
+            "keywords": [
+                "ui",
+                "ux",
+                "design-systems",
+                "accessibility",
+                "wcag",
+                "user-research",
+                "interaction-design",
+                "visual-design",
+                "responsive-design",
+                "design-review"
+            ],
+            "category": "design",
             "strict": false
         }
     ]

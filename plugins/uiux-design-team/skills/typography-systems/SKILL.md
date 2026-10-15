@@ -1,6 +1,6 @@
 ---
 name: typography-systems
-description: Use when building a new type scale, converting fixed sizes to fluid clamp() values, choosing or pairing fonts, fixing readability issues (line height, measure, tracking), or encoding typography as design tokens / CSS custom properties.
+description: Guides creation and refinement of web typography systems including fluid type scales, font selection and pairing, readability optimization, and design token encoding. Use when building a new type scale, converting fixed sizes to fluid clamp() values, choosing or pairing fonts, fixing readability issues (line height, measure, tracking), or encoding typography as design tokens / CSS custom properties.
 metadata:
    references:
    - references/font-pairing-guide.md
@@ -28,7 +28,7 @@ Pick by use case (full table in [type-scale-theory.md](references/type-scale-the
 
 ### Step 2 — Generate the scale
 
-Base 16px (or 1rem). Multiply up, divide down. Tools: `npx type-scale-generator`, or by hand. Worked example in [type-scale-theory.md](references/type-scale-theory.md).
+Base 16px (or 1rem). Multiply up, divide down — by hand, or with any browser-based type-scale calculator. Worked example in [type-scale-theory.md](references/type-scale-theory.md).
 
 ```css
 :root {
